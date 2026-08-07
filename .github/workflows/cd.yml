@@ -70,14 +70,39 @@ jobs:
           kubectl apply -n default -f k8s/hpa.yaml
           kubectl apply -n default -f k8s/ingress.yaml
 
-      - name: Verify rollout
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/hola-mibanco -n default --timeout=120s
+
+  validate:
+    needs: build-push-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: AKS credentials
+        run: az aks get-credentials --resource-group "$AKS_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --admin --overwrite-existing
+
+      - name: kubectl get pods
         run: |
-          kubectl rollout status deployment/hola-mibanco -n default --timeout=120s
           NOT_READY=$(kubectl get pods -n default -l app=hola-mibanco -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' | grep -c false || true)
+          kubectl get pods -n default -l app=hola-mibanco -o wide
           if [ "$NOT_READY" -gt 0 ]; then
             echo "::error::pods not ready"
-            kubectl get pods -n default -l app=hola-mibanco
             exit 1
           fi
-          kubectl get pods -n default -l app=hola-mibanco -o wide
-          kubectl get ingress -n default hola-mibanco
+
+      - name: kubectl get ingress
+        run: kubectl get ingress -n default hola-mibanco
+
+      - name: kubectl get hpa
+        run: kubectl get hpa -n default hola-mibanco
+
+      - name: Smoke test the live endpoint
+        run: |
+          BODY=$(curl -fsS https://hola-mibanco.naodeko.site/)
+          echo "$BODY"
+          echo "$BODY" | grep -q "Hola Mibanco"

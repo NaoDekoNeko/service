@@ -2,8 +2,14 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hola-mibanco
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - hola-mibanco.naodeko.site
+      secretName: hola-mibanco-tls
   rules:
     - host: hola-mibanco.naodeko.site
       http:

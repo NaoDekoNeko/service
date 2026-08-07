@@ -4,6 +4,7 @@ metadata:
   name: hola-mibanco
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.org/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:

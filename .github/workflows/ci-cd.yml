@@ -47,7 +47,7 @@ jobs:
       - name: Instalar az cli y kubectl (el runner de ARC no los trae)
         run: |
           curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-          az aks install-cli --only-show-errors
+          sudo az aks install-cli --only-show-errors
 
       - uses: azure/login@v2
         with:

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hola-mibanco
+  labels:
+    app: hola-mibanco
+spec:
+  type: ClusterIP
+  selector:
+    app: hola-mibanco
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP

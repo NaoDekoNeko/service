@@ -1,3 +1,3 @@
-module github.com/ademarx17/service
+module github.com/NaoDekoNeko/service
 
-go 1.23
+go 1.26.5

@@ -44,6 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install az cli and kubectl
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          sudo az aks install-cli --only-show-errors
+
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -82,19 +87,19 @@ jobs:
 
       - name: Deploy manifests
         run: |
-          sed "s#IMAGE_PLACEHOLDER#${IMAGE_TAG}#g" k8s/deployment.yaml | kubectl apply -f -
-          kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/hpa.yaml
-          kubectl apply -f k8s/ingress.yaml
+          sed "s#IMAGE_PLACEHOLDER#${IMAGE_TAG}#g" k8s/deployment.yaml | kubectl apply -n default -f -
+          kubectl apply -n default -f k8s/service.yaml
+          kubectl apply -n default -f k8s/hpa.yaml
+          kubectl apply -n default -f k8s/ingress.yaml
 
       - name: Verify rollout
         run: |
-          kubectl rollout status deployment/hola-mibanco --timeout=120s
-          NOT_READY=$(kubectl get pods -l app=hola-mibanco -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' | grep -c false || true)
+          kubectl rollout status deployment/hola-mibanco -n default --timeout=120s
+          NOT_READY=$(kubectl get pods -n default -l app=hola-mibanco -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' | grep -c false || true)
           if [ "$NOT_READY" -gt 0 ]; then
             echo "::error::pods not ready"
-            kubectl get pods -l app=hola-mibanco
+            kubectl get pods -n default -l app=hola-mibanco
             exit 1
           fi
-          kubectl get pods -l app=hola-mibanco -o wide
-          kubectl get ingress hola-mibanco
+          kubectl get pods -n default -l app=hola-mibanco -o wide
+          kubectl get ingress -n default hola-mibanco

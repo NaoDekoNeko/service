@@ -1,0 +1,100 @@
+name: CI/CD - hola-mibanco
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  ACR_NAME: acrmibancochallenge
+  ACR_LOGIN_SERVER: acrmibancochallenge.azurecr.io
+  IMAGE_NAME: hola-mibanco
+  AKS_RESOURCE_GROUP: rg-mibanco-challenge
+  AKS_CLUSTER_NAME: aks-mibanco-challenge
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.26.5" }
+      - run: go vet ./...
+      - run: go build ./...
+
+      - name: Trivy fs scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+  build-push-deploy:
+    needs: test
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: arc-runner-set
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Set image tag
+        run: echo "IMAGE_TAG=${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Docker build
+        run: docker build -t "$IMAGE_TAG" .
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "config"
+          scan-ref: "k8s/"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      - name: Docker push
+        run: docker push "$IMAGE_TAG"
+
+      - name: AKS credentials
+        run: az aks get-credentials --resource-group "$AKS_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --admin --overwrite-existing
+
+      - name: Deploy manifests
+        run: |
+          sed "s#IMAGE_PLACEHOLDER#${IMAGE_TAG}#g" k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl apply -f k8s/ingress.yaml
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/hola-mibanco --timeout=120s
+          NOT_READY=$(kubectl get pods -l app=hola-mibanco -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' | grep -c false || true)
+          if [ "$NOT_READY" -gt 0 ]; then
+            echo "::error::pods not ready"
+            kubectl get pods -l app=hola-mibanco
+            exit 1
+          fi
+          kubectl get pods -l app=hola-mibanco -o wide
+          kubectl get ingress hola-mibanco

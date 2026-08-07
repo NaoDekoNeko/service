@@ -14,11 +14,21 @@ spec:
       labels:
         app: hola-mibanco
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: hola-mibanco
           image: IMAGE_PLACEHOLDER
           ports:
             - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: "100m"
